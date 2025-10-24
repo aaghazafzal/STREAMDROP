@@ -17,6 +17,11 @@ work_loads = {}
 
 class_cache = {}
 
+@app.get("/")
+async def root():
+    """Health check route for Render"""
+    return {"status": "ok", "message": "Bot is running!"}
+
 # Helper function
 def get_readable_file_size(size_in_bytes):
     if not size_in_bytes: return '0B'
