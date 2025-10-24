@@ -1,16 +1,17 @@
-# webserver.py (FINAL CODE - No more traceback or get_history errors)
+# webserver.py (FULL AND FINAL CODE v2)
 
 import math
-import traceback # <-- YAHAN IMPORT ADD KIYA HAI
+import traceback
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pyrogram.file_id import FileId
 from pyrogram import raw, Client
+from pyrogram.session import Session, Auth  # Naya import
 
 from config import Config
-from bot import bot, initialize_clients, multi_clients, work_loads, get_readable_file_size, link_db # link_db ko import kiya
+from bot import bot, initialize_clients, multi_clients, work_loads, get_readable_file_size, link_db
 
 # --- Lifespan Manager ---
 @asynccontextmanager
@@ -41,7 +42,6 @@ async def root():
 
 # --- ByteStreamer Class for Streaming Logic ---
 class ByteStreamer:
-    # ... (Yeh class same rahegi, koi change nahi)
     def __init__(self, client: Client):
         self.client = client
 
@@ -61,9 +61,15 @@ class ByteStreamer:
         media_session = client.media_sessions.get(file_id.dc_id)
         if media_session is None:
             if file_id.dc_id != await client.storage.dc_id():
-                media_session = await client.create_media_session(file_id.dc_id)
+                auth_key = await Auth(client, file_id.dc_id, await client.storage.test_mode()).create()
+                media_session = Session(client, file_id.dc_id, auth_key, await client.storage.test_mode(), is_media=True)
+                await media_session.start()
+                
+                exported_auth = await client.invoke(raw.functions.auth.ExportAuthorization(dc_id=file_id.dc_id))
+                await media_session.invoke(raw.functions.auth.ImportAuthorization(id=exported_auth.id, bytes=exported_auth.bytes))
             else:
                 media_session = client.session
+            
             client.media_sessions[file_id.dc_id] = media_session
         
         location = await self.get_location(file_id)
@@ -71,8 +77,9 @@ class ByteStreamer:
         
         try:
             while current_part <= part_count:
-                r = await media_session.send(
-                    raw.functions.upload.GetFile(location=location, offset=offset, limit=chunk_size)
+                r = await media_session.invoke(
+                    raw.functions.upload.GetFile(location=location, offset=offset, limit=chunk_size),
+                    retries=0
                 )
                 if isinstance(r, raw.types.upload.File):
                     chunk = r.bytes
@@ -89,11 +96,10 @@ class ByteStreamer:
         finally:
             work_loads[index] -= 1
 
-# --- API Routes ---
+# --- API Routes (No changes here) ---
 @app.get("/show/{unique_id}")
 async def show_file_page(request: Request, unique_id: str):
     try:
-        # YAHAN BADLAV HAI: Log channel ke bajaye in-memory dictionary se ID lena
         storage_msg_id = link_db.get(unique_id)
         if not storage_msg_id:
             raise HTTPException(status_code=404, detail="Link expired or invalid. Please generate a new link.")
@@ -129,7 +135,6 @@ async def show_file_page(request: Request, unique_id: str):
 
 @app.get("/dl/{msg_id}/{file_name}")
 async def stream_handler(request: Request, msg_id: int, file_name: str):
-    # ... (Yeh poora function same rahega, koi change nahi)
     range_header = request.headers.get("Range", 0)
     
     index = min(work_loads, key=work_loads.get, default=0)
