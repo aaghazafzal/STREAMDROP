@@ -1,4 +1,4 @@
-# bot.py (FULL UPDATED CODE with all features)
+# bot.py (FULL UPDATED CODE)
 
 import os
 import time
@@ -14,9 +14,9 @@ from pyrogram.errors import FloodWait
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import Config
-from database import db  # Database import kiya gaya
+from database import db
 
-# Dictionaries ko yahan define karna hai
+# In-memory dictionaries
 multi_clients = {}
 work_loads = {}
 
@@ -111,14 +111,12 @@ async def handle_file_upload(message: Message, user_id: int):
         sent_message = await message.copy(chat_id=Config.STORAGE_CHANNEL)
         unique_id = secrets.token_urlsafe(8)
         
-        # Link ko permanent banane ke liye database mein save karein
         await db.save_link(unique_id, sent_message.id)
         
-        show_link = f"{Config.BASE_URL}/show/{unique_id}"
+        final_link = f"{Config.BLOGGER_PAGE_URL}?id={unique_id}"
 
-        # Button banayein
         button = InlineKeyboardMarkup(
-            [[InlineKeyboardButton(text="Open Your Link 🔗", url=show_link)]]
+            [[InlineKeyboardButton(text="Open Your Link 🔗", url=final_link)]]
         )
 
         await message.reply_text(
@@ -126,6 +124,7 @@ async def handle_file_upload(message: Message, user_id: int):
             reply_markup=button,
             quote=True
         )
+
     except Exception as e:
         error_trace = traceback.format_exc()
         print(f"!!! ERROR in handle_file_upload: {e}\n{error_trace}")
@@ -135,10 +134,10 @@ async def handle_file_upload(message: Message, user_id: int):
 async def file_handler(client, message: Message):
     await handle_file_upload(message, message.from_user.id)
 
-@bot.on_message(filters.command("url") & filters.private)
+@bot.on_message(filters.command("url") & filters.private & filters.user(Config.OWNER_ID))
 async def url_upload_handler(client, message: Message):
     if len(message.command) < 2:
-        await message.reply_text("Usage: `/url <direct_download_url>`"); return
+        await message.reply_text("Usage: `/url <direct_download_link>`"); return
 
     url = message.command[1]
     file_name = os.path.basename(urlparse(url).path) or f"file_{int(time.time())}"
