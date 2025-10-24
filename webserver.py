@@ -1,163 +1,182 @@
-# webserver.py (THE REAL-REAL-FINAL-FINAL CODE)
+# bot.py (THE FINAL, CLEAN, WORKING CODE)
 
-import math
-import traceback
 import os
-from contextlib import asynccontextmanager
-from typing import Optional
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.templating import Jinja2Templates
-from pyrogram.file_id import FileId
-from pyrogram import raw, Client
-from pyrogram.session import Session, Auth
+import time
+import asyncio
+import secrets
+import traceback
+from urllib.parse import urlparse
+
+import aiohttp
+import aiofiles
+from pyrogram import Client, filters
+from pyrogram.errors import FloodWait
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import Config
-from bot import bot, initialize_clients, multi_clients, work_loads, get_readable_file_size
 from database import db
 
-# --- Lifespan Manager ---
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    print("Web server is starting up...")
-    print("Starting bot...")
-    await bot.start()
-    print("Main bot started.")
+# Dictionaries
+multi_clients = {}
+work_loads = {}
 
-    # --- YEH HAI ASLI FINAL FIX ---
-    # Bot ko uske saare chats ki list fetch karne ke liye force karo
-    # Isse saare channels (including STORAGE_CHANNEL) uski memory (cache) mein aa jayenge.
-    try:
-        print("Caching all chats the bot is a member of...")
-        async for _ in bot.get_dialogs():
-            pass
-        print("Chat caching complete. Bot now knows about all its channels.")
-    except Exception as e:
-        print(f"!!! FATAL ERROR: Could not get dialogs. This is unexpected. Error: {e}")
-    # --- FIX KHATAM ---
-    
-    print("Initializing clients...")
-    await initialize_clients(bot)
-    print("All clients initialized. Application startup complete.")
-    yield
-    print("Web server is shutting down...")
-    if bot.is_initialized:
-        await bot.stop()
-    print("Bot stopped.")
+# --- Bot Initialization ---
+bot = Client(
+    "SimpleStreamBot",
+    api_id=Config.API_ID,
+    api_hash=Config.API_HASH,
+    bot_token=Config.BOT_TOKEN,
+    workers=100
+)
 
-app = FastAPI(lifespan=lifespan)
-templates = Jinja2Templates(directory="templates")
-class_cache = {}
 
-@app.api_route("/", methods=["GET", "HEAD"])
-async def root():
-    return {"status": "ok", "message": "Server is healthy and running!"}
-
-def mask_filename(name: str) -> str:
-    if not name: return "Protected File"
-    resolutions = ["2160p", "1080p", "720p", "480p", "360p"]
-    res_part = ""
-    for res in resolutions:
-        if res in name: res_part = f" {res}"; name = name.replace(res, ""); break
-    base, ext = os.path.splitext(name)
-    masked_base = ''.join(c if (i % 3 == 0 and c.isalnum()) else '*' for i, c in enumerate(base))
-    return f"{masked_base}{res_part}{ext}"
-
-class ByteStreamer:
-    def __init__(self, client: Client): self.client = client
+# --- Multi-Client Initialization ---
+class TokenParser:
     @staticmethod
-    async def get_location(file_id: FileId): return raw.types.InputDocumentFileLocation(id=file_id.media_id, access_hash=file_id.access_hash, file_reference=file_id.file_reference, thumb_size=file_id.thumbnail_size)
-    async def yield_file(self, file_id: FileId, index: int, offset: int, first_part_cut: int, last_part_cut: int, part_count: int, chunk_size: int):
-        client = self.client; work_loads[index] += 1
-        media_session = client.media_sessions.get(file_id.dc_id)
-        if media_session is None:
-            if file_id.dc_id != await client.storage.dc_id():
-                auth_key = await Auth(client, file_id.dc_id, await client.storage.test_mode()).create()
-                media_session = Session(client, file_id.dc_id, auth_key, await client.storage.test_mode(), is_media=True)
-                await media_session.start()
-                exported_auth = await client.invoke(raw.functions.auth.ExportAuthorization(dc_id=file_id.dc_id))
-                await media_session.invoke(raw.functions.auth.ImportAuthorization(id=exported_auth.id, bytes=exported_auth.bytes))
-            else: media_session = client.session
-            client.media_sessions[file_id.dc_id] = media_session
-        location = await self.get_location(file_id)
-        current_part = 1
-        try:
-            while current_part <= part_count:
-                r = await media_session.invoke(raw.functions.upload.GetFile(location=location, offset=offset, limit=chunk_size), retries=0)
-                if isinstance(r, raw.types.upload.File):
-                    chunk = r.bytes
-                    if not chunk: break
-                    if part_count == 1: yield chunk[first_part_cut:last_part_cut]
-                    elif current_part == 1: yield chunk[first_part_cut:]
-                    elif current_part == part_count: yield chunk[:last_part_cut]
-                    else: yield chunk
-                    current_part += 1; offset += chunk_size
-                else: break
-        finally: work_loads[index] -= 1
-
-@app.get("/show/{unique_id}")
-async def show_file_page(request: Request, unique_id: str):
-    try:
-        storage_msg_id = await db.get_link(unique_id)
-        if not storage_msg_id: raise HTTPException(404, "Link expired or invalid.")
-        main_bot = multi_clients.get(0)
-        if not main_bot: raise HTTPException(503, "Bot not initialized.")
-        file_msg = await main_bot.get_messages(Config.STORAGE_CHANNEL, storage_msg_id)
-        media = file_msg.document or file_msg.video or file_msg.audio
-        if not media: raise HTTPException(404, "File media not found.")
-        
-        original_file_name = media.file_name
-        masked_name = mask_filename(original_file_name)
-        file_size = get_readable_file_size(media.file_size)
-        mime_type = media.mime_type or "application/octet-stream"
-        is_media = mime_type.startswith("video/") or mime_type.startswith("audio/")
-        dl_link = f"{Config.BASE_URL}/dl/{storage_msg_id}"
-        
-        context = {
-            "request": request, "file_name": masked_name, "file_size": file_size,
-            "is_media": is_media, "direct_dl_link": dl_link,
-            "mx_player_link": f"intent:{dl_link}#Intent;action=android.intent.action.VIEW;type={mime_type};end",
-            "vlc_player_link": f"vlc://{dl_link}"
+    def parse_from_env():
+        return {
+            c + 1: t
+            for c, (_, t) in enumerate(
+                filter(lambda n: n[0].startswith("MULTI_TOKEN"), sorted(os.environ.items()))
+            )
         }
-        return templates.TemplateResponse("show.html", context)
-    except Exception: print(f"Error in /show: {traceback.format_exc()}"); raise HTTPException(500)
 
-@app.get("/dl/{msg_id}")
-async def stream_handler(request: Request, msg_id: int):
-    range_header = request.headers.get("Range", 0)
-    index = min(work_loads, key=work_loads.get, default=0)
-    client = multi_clients.get(index)
-    if not client: raise HTTPException(503, "No available clients to stream.")
-    if client in class_cache: tg_connect = class_cache[client]
-    else: tg_connect = ByteStreamer(client); class_cache[client] = tg_connect
+
+async def start_client(client_id, bot_token):
     try:
-        message = await client.get_messages(Config.STORAGE_CHANNEL, msg_id)
-        if not (message.video or message.document or message.audio) or message.empty: raise FileNotFoundError
-        media = message.document or message.video or message.audio
-        file_id = FileId.decode(media.file_id)
-        file_size = media.file_size
-        from_bytes, until_bytes = 0, file_size - 1
-        if range_header:
-            from_bytes_str, until_bytes_str = range_header.replace("bytes=", "").split("-")
-            from_bytes = int(from_bytes_str)
-            if until_bytes_str: until_bytes = int(until_bytes_str)
-        if (until_bytes >= file_size) or (from_bytes < 0): raise HTTPException(416)
-        chunk_size = 1024 * 1024
-        req_length = until_bytes - from_bytes + 1
-        offset = from_bytes - (from_bytes % chunk_size)
-        first_part_cut = from_bytes - offset
-        last_part_cut = (until_bytes % chunk_size) + 1
-        part_count = math.ceil(req_length / chunk_size)
-        body = tg_connect.yield_file(file_id, index, offset, first_part_cut, last_part_cut, part_count, chunk_size)
-        return StreamingResponse(
-            content=body, status_code=206 if range_header else 200,
-            headers={
-                "Content-Type": media.mime_type or "application/octet-stream",
-                "Content-Range": f"bytes {from_bytes}-{until_bytes}/{file_size}",
-                "Content-Length": str(req_length),
-                "Accept-Ranges": "bytes",
-                "Content-Disposition": f'inline; filename="{media.file_name}"'
-            },
+        print(f"Attempting to start Client: {client_id}")
+        client = await Client(
+            name=str(client_id), api_id=Config.API_ID, api_hash=Config.API_HASH,
+            bot_token=bot_token, no_updates=True, in_memory=True
+        ).start()
+        work_loads[client_id] = 0
+        multi_clients[client_id] = client
+        print(f"Client {client_id} started successfully.")
+    except Exception as e:
+        print(f"!!! CRITICAL ERROR: Failed to start Client {client_id} - Error: {e}")
+
+
+async def initialize_clients(main_bot_instance):
+    multi_clients[0] = main_bot_instance
+    work_loads[0] = 0
+    
+    all_tokens = TokenParser.parse_from_env()
+    if not all_tokens:
+        print("No additional clients found. Using default bot only.")
+        return
+    
+    print(f"Found {len(all_tokens)} extra clients. Starting them with a delay.")
+    for i, token in all_tokens.items():
+        await start_client(i, token)
+        await asyncio.sleep(2)
+
+    if len(multi_clients) > 1:
+        print(f"Multi-Client Mode Enabled. Total Clients: {len(multi_clients)}")
+
+
+# --- Helper Functions ---
+def get_readable_file_size(size_in_bytes):
+    if not size_in_bytes: return '0B'
+    power, n = 1024, 0
+    power_labels = {0: '', 1: 'K', 2: 'M', 3: 'G'}
+    while size_in_bytes >= power and n < len(power_labels):
+        size_in_bytes /= power; n += 1
+    return f"{size_in_bytes:.2f} {power_labels[n]}B"
+
+
+# --- Bot Handlers ---
+@bot.on_message(filters.command("start") & filters.private)
+async def start_command(client, message: Message):
+    user_name = message.from_user.first_name
+    start_text = f"""
+👋 **Hello, {user_name}!**
+
+Welcome to Sharing Box Bot. I can help you create permanent, shareable links for your files.
+
+**How to use me:**
+1.  **Send me any file:** Just send or forward any file to this chat.
+2.  **Send me a URL:** Use the `/url <direct_download_link>` command to upload from a link.
+
+I will instantly give you a special link that you can share with anyone!
+"""
+    await message.reply_text(start_text)
+
+
+async def handle_file_upload(message: Message, user_id: int):
+    try:
+        sent_message = await message.copy(chat_id=Config.STORAGE_CHANNEL)
+        unique_id = secrets.token_urlsafe(8)
+        
+        await db.save_link(unique_id, sent_message.id)
+        
+        final_link = f"{Config.BLOGGER_PAGE_URL}?id={unique_id}"
+
+        button = InlineKeyboardMarkup(
+            [[InlineKeyboardButton(text="Open Your Link 🔗", url=final_link)]]
         )
-    except FileNotFoundError: raise HTTPException(404, "File not found on Telegram.")
-    except Exception: print(f"Error in /dl: {traceback.format_exc()}"); raise HTTPException(500)
+
+        await message.reply_text(
+            text=f"✅ Your shareable link has been generated!",
+            reply_markup=button,
+            quote=True
+        )
+    except Exception as e:
+        print(f"!!! ERROR in handle_file_upload: {traceback.format_exc()}")
+        await message.reply_text("Sorry, something went wrong.")
+
+
+@bot.on_message(filters.private & (filters.document | filters.video | filters.audio))
+async def file_handler(client, message: Message):
+    await handle_file_upload(message, message.from_user.id)
+
+
+@bot.on_message(filters.command("url") & filters.private & filters.user(Config.OWNER_ID))
+async def url_upload_handler(client, message: Message):
+    if len(message.command) < 2:
+        await message.reply_text("Usage: `/url <direct_download_link>`"); return
+
+    url = message.command[1]
+    file_name = os.path.basename(urlparse(url).path) or f"file_{int(time.time())}"
+    status_msg = await message.reply_text("Processing your link...")
+
+    if not os.path.exists('downloads'): os.makedirs('downloads')
+    file_path = os.path.join('downloads', file_name)
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=None) as resp:
+                if resp.status != 200:
+                    await status_msg.edit_text(f"Download failed! Status: {resp.status}"); return
+                
+                async with aiofiles.open(file_path, 'wb') as f:
+                    async for chunk in resp.content.iter_chunked(1024 * 1024):
+                        await f.write(chunk)
+    except Exception as e:
+        await status_msg.edit_text(f"Download Error: {e}")
+        if os.path.exists(file_path): os.remove(file_path)
+        return
+    
+    try:
+        sent_message = await client.send_document(chat_id=Config.STORAGE_CHANNEL, document=file_path)
+    finally:
+        if os.path.exists(file_path): os.remove(file_path)
+
+    # We need a message object that can be replied to. The original message is perfect for this.
+    # We will pass the sent_message to the handler, but use the original_message for replying.
+    
+    class TempMessage:
+        def __init__(self, new_msg, original_msg):
+            # Use attributes from the new message in storage channel
+            self._new_msg = new_msg
+            # Keep the original message to reply to the user
+            self._original_msg = original_msg
+        
+        async def copy(self, chat_id):
+            return await self._new_msg.copy(chat_id)
+
+        async def reply_text(self, *args, **kwargs):
+            return await self._original_msg.reply_text(*args, **kwargs)
+
+    temp_msg_for_handler = TempMessage(sent_message, message)
+    await handle_file_upload(temp_msg_for_handler, message.from_user.id)
+    await status_msg.delete()
