@@ -1,4 +1,4 @@
-# webserver.py (FULL AND FINAL CODE v2)
+# webserver.py (FULL UPDATED CODE with DB)
 
 import math
 import traceback
@@ -8,10 +8,11 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pyrogram.file_id import FileId
 from pyrogram import raw, Client
-from pyrogram.session import Session, Auth  # Naya import
+from pyrogram.session import Session, Auth
 
 from config import Config
-from bot import bot, initialize_clients, multi_clients, work_loads, get_readable_file_size, link_db
+from bot import bot, initialize_clients, multi_clients, work_loads, get_readable_file_size
+from database import db # Database import kiya gaya
 
 # --- Lifespan Manager ---
 @asynccontextmanager
@@ -96,11 +97,11 @@ class ByteStreamer:
         finally:
             work_loads[index] -= 1
 
-# --- API Routes (No changes here) ---
+# --- API Routes ---
 @app.get("/show/{unique_id}")
 async def show_file_page(request: Request, unique_id: str):
     try:
-        storage_msg_id = link_db.get(unique_id)
+        storage_msg_id = await db.get_link(unique_id)
         if not storage_msg_id:
             raise HTTPException(status_code=404, detail="Link expired or invalid. Please generate a new link.")
         
