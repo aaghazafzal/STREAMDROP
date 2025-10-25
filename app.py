@@ -176,8 +176,8 @@ async def start_command(client: Client, message: Message):
                 keyboard = InlineKeyboardMarkup([[join_button], [retry_button]])
                 
                 await message.reply_text(
-                    "**You must join our channel to get the link!**\n\n"
-                    "Join the channel, then click 'Try Again'.",
+                    "**You Must Join Our Channel To Get The Link!**\n\n"
+                    "__Join Channel & Click '✅ Joined'.__",
                     reply_markup=keyboard,
                     quote=True
                 )
@@ -186,7 +186,7 @@ async def start_command(client: Client, message: Message):
         # Agar user member hai (ya force sub on nahi hai), toh use asli link do
         final_link = f"{Config.BLOGGER_PAGE_URL}?id={unique_id}" if Config.BLOGGER_PAGE_URL else f"{Config.BASE_URL}/show/{unique_id}"
         
-        reply_text = f"✅ Verification Successful!\n\nCopy Link: `{final_link}`"
+        reply_text = f"__✅ Verification Successful!\n\nCopy Link:__ `{final_link}`"
         
         button = InlineKeyboardMarkup([[InlineKeyboardButton("Open Link", url=final_link)]])
         
@@ -197,12 +197,11 @@ async def start_command(client: Client, message: Message):
         reply_text = f"""
 👋 **Hello, {user_name}!**
 
-Welcome to Sharing Box Bot. I can help you create permanent, shareable links for your files.
+__Welcome To Sharing Box Bot. I Can Help You Create Permanent, Shareable Links For Your Files.__
 
-**How to use me:**
-Just send or forward any file to this chat.
+**How To Use Me:**
 
-I will instantly give you a special link that you can share with anyone!
+__Just Send Or Forward Any File To Me And I will instantly give you a special link that you can share with anyone!__
 """
         await message.reply_text(reply_text)
 
@@ -219,7 +218,7 @@ async def handle_file_upload(message: Message, user_id: int):
         button = InlineKeyboardMarkup([[InlineKeyboardButton("Get Link Now", url=verify_link)]])
         
         await message.reply_text(
-            "✅ File Uploaded!",
+            "__✅ File Uploaded!__",
             reply_markup=button,
             quote=True
         )
