@@ -1,3 +1,5 @@
+# Dockerfile (FINAL CLEANED UPDATED CODE)
+
 # Python ka ek halka-phulka official version use karo
 FROM python:3.10-slim
 
@@ -12,9 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Ab baaki ka saara project code copy karo
 COPY . .
 
-# --- YAHAN BADLAV KIYA GAYA HAI ---
-# Session files save karne ke liye 'sessions' naam ka folder banao
-RUN mkdir sessions
+# 'sessions' folder banane ki ab zaroorat nahi hai
+# RUN mkdir sessions
 
 # start.sh ko run karne ki permission do
 RUN chmod +x start.sh
