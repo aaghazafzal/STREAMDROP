@@ -1,4 +1,4 @@
-# app.py (FINAL VERSION WITH MULTI-CLIENT SUPPORT, FULL AND UN-COLLAPSED)
+# app.py (THE REAL, FINAL, CLEAN, EASY-TO-READ FULL CODE)
 
 import os
 import asyncio
@@ -6,6 +6,7 @@ import secrets
 import traceback
 import uvicorn
 import re
+import logging
 from contextlib import asynccontextmanager
 
 from pyrogram import Client, filters, enums
@@ -24,7 +25,7 @@ from config import Config
 from database import db
 
 # =====================================================================================
-# --- SETUP: BOT AUR WEB SERVER KO TAIYAAR KARNA ---
+# --- SETUP: BOT, WEB SERVER, AUR LOGGING ---
 # =====================================================================================
 
 @asynccontextmanager
@@ -45,10 +46,8 @@ async def lifespan(app: FastAPI):
         print(f"✅ Main Bot [@{Config.BOT_USERNAME}] safaltapoorvak start ho gaya.")
 
         # --- MULTI-CLIENT STARTUP ---
-        # Pehle main bot ko list mein daalo
         multi_clients[0] = bot
         work_loads[0] = 0
-        # Ab baaki bots ko start karo
         await initialize_clients()
         
         print(f"Verifying storage channel ({Config.STORAGE_CHANNEL})...")
@@ -88,6 +87,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- LOG FILTER: YEH SIRF /dl/ WALE LOGS KO CHUPAYEGA ---
+class HideDLFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Agar log message mein "GET /dl/" hai, toh usse mat dikhao
+        return "GET /dl/" not in record.getMessage()
+
+# Uvicorn ke 'access' logger par filter lagao
+logging.getLogger("uvicorn.access").addFilter(HideDLFilter())
+# --- FIX KHATAM ---
+
 bot = Client("SimpleStreamBot", api_id=Config.API_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN, in_memory=True)
 multi_clients = {}; work_loads = {}; class_cache = {}
 
@@ -138,25 +148,36 @@ async def initialize_clients():
     if len(multi_clients) > 1:
         print(f"✅ Multi-Client Mode Enabled. Total Clients: {len(multi_clients)}")
 
-
 # =====================================================================================
 # --- HELPER FUNCTIONS ---
 # =====================================================================================
 
 def get_readable_file_size(size_in_bytes):
-    if not size_in_bytes: return '0B'
-    power = 1024; n = 0; power_labels = {0: 'B', 1: 'KB', 2: 'MB', 3: 'GB'}
-    while size_in_bytes >= power and n < len(power_labels) - 1: size_in_bytes /= power; n += 1
+    if not size_in_bytes:
+        return '0B'
+    power = 1024
+    n = 0
+    power_labels = {0: 'B', 1: 'KB', 2: 'MB', 3: 'GB'}
+    while size_in_bytes >= power and n < len(power_labels) - 1:
+        size_in_bytes /= power
+        n += 1
     return f"{size_in_bytes:.2f} {power_labels[n]}"
 
 def mask_filename(name: str):
-    if not name: return "Protected File"
+    if not name:
+        return "Protected File"
     base, ext = os.path.splitext(name)
-    metadata_pattern = re.compile(r'((19|20)\d{2}|4k|2160p|1080p|720p|480p|360p|HEVC|x265|BluRay|WEB-DL|HDRip)', re.IGNORECASE)
+    metadata_pattern = re.compile(
+        r'((19|20)\d{2}|4k|2160p|1080p|720p|480p|360p|HEVC|x265|BluRay|WEB-DL|HDRip)',
+        re.IGNORECASE
+    )
     match = metadata_pattern.search(base)
     if match:
-        title_part = base[:match.start()].strip(' .-_'); metadata_part = base[match.start():]
-    else: title_part = base; metadata_part = ""
+        title_part = base[:match.start()].strip(' .-_')
+        metadata_part = base[match.start():]
+    else:
+        title_part = base
+        metadata_part = ""
     masked_title = ''.join(c if (i % 3 == 0 and c.isalnum()) else ('*' if c.isalnum() else c) for i, c in enumerate(title_part))
     return f"{masked_title} {metadata_part}{ext}".strip()
 
@@ -196,7 +217,12 @@ async def start_command(client: Client, message: Message):
     else:
         reply_text = f"""
 👋 **Hello, {user_name}!**
-__Welcome To Sharing Box Bot...__
+
+__Welcome To Sharing Box Bot. I Can Help You Create Permanent, Shareable Links For Your Files.__
+
+**How To Use Me:**
+
+__Just Send Or Forward Any File To Me And I will instantly give you a special link that you can share with anyone!__
 """
         await message.reply_text(reply_text)
 
@@ -296,12 +322,10 @@ class ByteStreamer:
 
 @app.get("/dl/{mid}/{fname}")
 async def stream_media(r:Request,mid:int,fname:str):
-    if not work_loads: raise HTTPException(status_code=503, detail="No clients available.")
+    if not work_loads: raise HTTPException(503)
     client_id = min(work_loads, key=work_loads.get)
     c = multi_clients.get(client_id)
-    if not c: raise HTTPException(503, detail="Client not found.")
-    
-    print(f"Streaming request handled by Client: {client_id}")
+    if not c: raise HTTPException(503)
     
     tc=class_cache.get(c) or ByteStreamer(c);class_cache[c]=tc
     try:
@@ -326,4 +350,5 @@ async def stream_media(r:Request,mid:int,fname:str):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="warning")
+    # Log level ko "info" rakho taaki hamara filter kaam kar sake
+    uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="info")
