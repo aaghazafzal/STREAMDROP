@@ -25,6 +25,7 @@ import math
 # Project ki dusri files se important cheezein import karo
 from config import Config
 from database import db
+from subscription import get_plan_status, increment_user_usage
 
 # =====================================================================================
 # --- SETUP: BOT, WEB SERVER, AUR LOGGING ---
