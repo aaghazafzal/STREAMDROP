@@ -748,33 +748,26 @@ async def handle_file_upload(message: Message, user_id: int):
         buttons.append([InlineKeyboardButton("🌐 UNIVORA SITE", url="https://univora.site")])
         
         # Expire Notice
-        expire_note = "\n⏳ **Link Expires:** `24 Hours`" if status['plan_type'] == 'free' else "\n⏳ **Link Expires:** `Premium`"
-        if user_id == Config.OWNER_ID: expire_note = "\n⏳ **Link Expires:** `Never (Admin)`"
+        plan_type = status.get('plan_type', 'free')
+        if user_id == Config.OWNER_ID:
+            expire_note = "\n⏳ **Link Expires:** `Never (Admin)`"
+        elif plan_type == 'free':
+            expire_note = "\n⏳ **Link Expires:** `24 Hours`"
+        else:
+            expire_note = f"\n⏳ **Link Expires:** `{status.get('name', 'Premium')}`"
 
         # Final Reply
-        if "localhost" in Config.BASE_URL or "127.0.0.1" in Config.BASE_URL:
-            await message.reply_text(
-                f"**✅ File Safely Stored on Univora Cloud (LOCAL MODE)!**\n\n"
-                f"**📂 Name:** `{file_name}`\n"
-                f"**💾 Size:** `{file_size}`\n"
-                f"{expire_note}\n\n"
-                f"{status_text}\n\n"
-                f"__Buttons are disabled in Localhost Mode.__\n"
-                f"__Powered by Univora | Dev: Rolex Sir__",
-                quote=True
-            )
-        else:
-            await message.reply_text(
-                f"**✅ File Safely Stored on Univora Cloud!**\n\n"
-                f"**📂 Name:** `{file_name}`\n"
-                f"**💾 Size:** `{file_size}`\n"
-                f"{expire_note}\n\n"
-                f"{status_text}\n\n"
-                f"__Tap the button below for {action_verb.lower()}.__\n"
-                f"__Powered by Univora | Dev: Rolex Sir__",
-                reply_markup=InlineKeyboardMarkup(buttons),
-                quote=True
-            )
+        await message.reply_text(
+            f"**✅ File Safely Stored on Univora Cloud!**\n\n"
+            f"**📂 Name:** `{file_name}`\n"
+            f"**💾 Size:** `{file_size}`\n"
+            f"{expire_note}\n\n"
+            f"{status_text}\n\n"
+            f"__Tap the button below for {action_verb.lower()}.__\n"
+            f"__Powered by Univora | Dev: Rolex Sir__",
+            reply_markup=InlineKeyboardMarkup(buttons),
+            quote=True
+        )
     except Exception as e:
         print(f"!!! ERROR: {traceback.format_exc()}"); await message.reply_text("Sorry, something went wrong.")
 
