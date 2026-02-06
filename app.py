@@ -134,7 +134,13 @@ app.add_middleware(
 # logging.getLogger("uvicorn.access").addFilter(HideDLFilter())
 # --- FIX KHATAM ---
 
-bot = Client("SimpleStreamBot", api_id=Config.API_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN, in_memory=False)
+bot = Client(":memory:", api_id=Config.API_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN, in_memory=True) 
+# Note: On Render (Ephemeral Filesystem), 'in_memory=False' creates a .session file that gets deleted on restart/deploy.
+# This causes "Peer ID Invalid" because the new session file is blank every time.
+# Switching to 'in_memory=True' (default) doesn't help persistence either.
+# The REAL solution for Render is using a STRING_SESSION, but we are using a Bot Token.
+# Bot Tokens usually don't need Access Hash caching IF the bot is an Admin.
+# But sometimes Pyrogram struggles. We will rely on the Warmup Handler.
 multi_clients = {}; work_loads = {}; class_cache = {}
 
 # --- CHANNEL WARMUP HANDLER ---
@@ -681,7 +687,21 @@ async def handle_file_upload(message: Message, user_id: int):
         return
 
     try:
-        sent_message = await message.copy(chat_id=Config.STORAGE_CHANNEL)
+        # ATTEMPT 1: Direct Copy
+        try:
+             sent_message = await message.copy(chat_id=Config.STORAGE_CHANNEL)
+        except Exception as e:
+             # Retry Logic for Peer ID Invalid
+             print(f"⚠️ Upload Warning: Copy failed ({e}). Retrying with ID resolve...")
+             try:
+                 # Resolve Peer Explicitly
+                 await client.get_chat(Config.STORAGE_CHANNEL)
+                 sent_message = await message.copy(chat_id=Config.STORAGE_CHANNEL)
+             except Exception as e2:
+                 # If it fails again, tell user to wake up the bot
+                 await message.reply_text(f"❌ **Error:** Bot cannot access Storage Channel.\n\n👉 **Solution:** Go to the Storage Channel and send a message. Then try again.")
+                 print(f"❌ Upload Failed Final: {e2}")
+                 return
         unique_id = secrets.token_urlsafe(8)
         
         # Metadata Extraction
