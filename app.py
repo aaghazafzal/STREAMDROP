@@ -769,7 +769,13 @@ async def handle_file_upload(message: Message, user_id: int):
             quote=True
         )
     except Exception as e:
-        print(f"!!! ERROR: {traceback.format_exc()}"); await message.reply_text("Sorry, something went wrong.")
+        error_msg = traceback.format_exc()
+        print(f"!!! UPLOAD ERROR !!!")
+        print(f"Error: {str(e)}")
+        print(f"Full Traceback:\n{error_msg}")
+        print(f"User ID: {user_id}")
+        print(f"File Name: {message.document.file_name if message.document else 'No Document'}")
+        await message.reply_text("Sorry, something went wrong. Admin has been notified.")
 
 @bot.on_message(filters.private & (filters.document | filters.video | filters.audio | filters.photo))
 async def file_handler(_, message: Message):
