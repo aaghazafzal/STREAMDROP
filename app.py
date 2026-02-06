@@ -42,19 +42,18 @@ async def lifespan(app: FastAPI):
     await bot.start()
     
     # --- FIX: POPULATE PEER CACHE (SYNCS DIALOGS) ---
-    # This acts as a "Force Sync" for the bot to recognize channels it is already in.
-    print("🔄 Syncing Dialogs to Cache Peers...")
-    try:
-        async for dialog in bot.get_dialogs():
-             # Just iterating is enough for Pyrogram to cache the peers
-             pass
-        print("✅ Dialog Sync Complete.")
-    except Exception as e:
-        print(f"⚠️ Dialog Sync Warning: {e}")
-
+    # Bots cannot use get_dialogs(), so we removed that.
+    # Instead, we try to fetch 'me' in the channel to verify access.
+    
     # --- DISCOVERY LOGIC ---
     try:
         print(f"🔍 Discovery: Attempting to resolve Storage Channel ({Config.STORAGE_CHANNEL})...")
+        # Try getting chat member (me) first - sometimes works better for caching
+        try:
+            await bot.get_chat_member(Config.STORAGE_CHANNEL, "me")
+        except:
+            pass # Fallback to get_chat
+            
         chat = await bot.get_chat(Config.STORAGE_CHANNEL)
         print(f"✅ Storage Channel Found: {chat.title} ({chat.id})")
     except Exception as e:
