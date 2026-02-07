@@ -14,6 +14,17 @@ class Database:
         self._client = motor.motor_asyncio.AsyncIOMotorClient(Config.DATABASE_URL)
         self.db = self._client["UnivoraStreamDrop"]
         self.col = self.db.links
+        
+        # Create indexes for faster queries (Performance Optimization)
+        try:
+            await self.col.create_index("user_id")
+            await self.col.create_index("timestamp")
+            await self.col.create_index([("user_id", 1), ("timestamp", -1)])
+            await self.db.users.create_index("_id")
+            print("✅ Database indexes created/verified.")
+        except Exception as e:
+            print(f"⚠️ Index creation warning: {e}")
+        
         print("✅ Database connection established (MongoDB).")
 
     async def disconnect(self):

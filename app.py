@@ -129,6 +129,10 @@ app.add_middleware(
 bot = Client("SimpleStreamBot", api_id=Config.API_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN, in_memory=False)
 multi_clients = {}; work_loads = {}; class_cache = {}
 
+# Performance Cache (reduces DB queries for frequent operations)
+user_status_cache = {}  # {user_id: (status_data, expiry_timestamp)}
+CACHE_TTL = 60  # Cache for 60 seconds
+
 # --- CHANNEL WARMUP HANDLER ---
 @bot.on_message(filters.channel)
 async def channel_warmup(client: Client, message: Message):
@@ -1208,5 +1212,17 @@ async def stream_media(r:Request, unique_id: str, fname: str):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    # Log level ko "info" rakho taaki hamara filter kaam kar sake
-    uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="info")
+    
+    # Performance Optimizations
+    workers = int(os.environ.get("WEB_CONCURRENCY", 1))  # Render sets this automatically
+    
+    uvicorn.run(
+        "app:app", 
+        host="0.0.0.0", 
+        port=port, 
+        log_level="info",
+        access_log=False,  # Disable detailed access logs for performance
+        timeout_keep_alive=300,  # Keep connections alive for large file streams
+        limit_concurrency=1000,  # Max concurrent connections
+        backlog=2048  # Connection queue size
+    )
