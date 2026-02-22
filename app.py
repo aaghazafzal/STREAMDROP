@@ -1072,7 +1072,15 @@ async def get_file_details_api(request: Request, unique_id: str):
     # URL Encoding for streaming links
     from urllib.parse import quote
     encoded_file_name = quote(file_name, safe='')
-    direct_dl_link = f"{Config.BASE_URL}/dl/{unique_id}/{encoded_file_name}"
+    
+    base_url = Config.BASE_URL.strip()
+    if not base_url.startswith(('http://', 'https://')):
+        base_url = f"https://{base_url}"
+    if base_url.startswith("http://") and "localhost" not in base_url and "127.0.0.1" not in base_url:
+        base_url = base_url.replace("http://", "https://", 1)
+    base_url = base_url.rstrip('/')
+        
+    direct_dl_link = f"{base_url}/dl/{unique_id}/{encoded_file_name}"
     
     # Format intents correctly
     # VLC mobile needs specific action and scheme
@@ -1089,7 +1097,7 @@ async def get_file_details_api(request: Request, unique_id: str):
         "file_size": file_size,
         "is_media": mime_type.startswith(("video", "audio")),
         "direct_dl_link": direct_dl_link,
-        "embed_link": f"{Config.BASE_URL}/embed/{unique_id}",
+        "embed_link": f"{base_url}/embed/{unique_id}",
         "mx_player_link": mx_mobile,
         "vlc_player_link_mobile": vlc_mobile,
         "vlc_player_link_pc": f"vlc://{direct_dl_link}",
