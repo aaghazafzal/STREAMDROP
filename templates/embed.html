@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Embedded Player</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Plyr CSS -->
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-color: #000000;
+            --surface-color: #0a0a0a;
+            --primary-color: #ff0000;
+            /* Pure Red */
+            --primary-glow: rgba(255, 0, 0, 0.4);
+            --text-main: #ffffff;
+            --text-sec: #aaaaaa;
+        }
+
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            overflow: hidden;
+            /* Important for iframes */
+        }
+
+        /* Plyr Red & Black Theme Overrides */
+        .plyr {
+            width: 100%;
+            height: 100%;
+            --plyr-color-main: var(--primary-color);
+            --plyr-video-background: var(--bg-color);
+            --plyr-menu-background: var(--surface-color);
+            --plyr-menu-color: var(--text-main);
+            --plyr-tooltip-background: var(--surface-color);
+            --plyr-tooltip-color: var(--text-main);
+        }
+
+        /* Loaders */
+        .loader-dots {
+            display: inline-flex;
+            gap: 4px;
+        }
+
+        .loader-dots span {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .loader-dots span:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+
+        .loader-dots span:nth-child(2) {
+            animation-delay: -0.16s;
+        }
+
+        @keyframes bounce {
+
+            0%,
+            80%,
+            100% {
+                transform: scale(0);
+            }
+
+            40% {
+                transform: scale(1);
+            }
+        }
+
+        #error-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+            background: var(--surface-color);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Loading State -->
+    <div id="loader-state" class="flex flex-col items-center justify-center w-full h-full space-y-4">
+        <div class="loader-dots scale-150"><span></span><span></span><span></span></div>
+        <p class="text-xs font-semibold tracking-widest uppercase text-[var(--text-sec)] animate-pulse">Loading
+            Stream...</p>
+    </div>
+
+    <!-- Error State -->
+    <div id="error-state" class="hidden">
+        <i class="ri-forbid-2-line text-4xl text-red-500 mb-3 hover:scale-110 transition-transform cursor-pointer"
+            onclick="window.open('https://t.me/STREAM_DROP_BOT', '_blank')"></i>
+        <h2 class="text-xl font-bold mb-1">Access Denied</h2>
+        <p class="text-xs text-[var(--text-sec)]">Link is invalid or expired.</p>
+    </div>
+
+    <!-- Content State -->
+    <div id="success-state" class="hidden w-full h-full relative">
+        <!-- Player Wrapper -->
+        <div id="player-container" class="w-full h-full hidden">
+            <!-- Overlay Loader for Buffer -->
+            <div id="media-loader"
+                class="absolute inset-0 z-20 flex items-center justify-center bg-black/60 pointer-events-none opacity-0 transition-opacity duration-300">
+                <div class="loader-dots"><span></span><span></span><span></span></div>
+            </div>
+        </div>
+
+        <!-- PDF/Image Viewer Area -->
+        <div id="viewer-container" class="w-full h-full hidden bg-[var(--surface-color)] relative">
+            <iframe id="pdf-frame" class="w-full h-full border-none hidden" allowfullscreen></iframe>
+
+            <div id="image-view-container" class="w-full h-full flex justify-center items-center p-4 hidden">
+                <img id="image-view"
+                    class="max-w-full max-h-full object-contain rounded drop-shadow-2xl selection:bg-transparent" />
+            </div>
+
+            <div id="file-view-container" class="w-full h-full flex flex-col justify-center items-center p-4 hidden">
+                <div
+                    class="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-600 to-black flex items-center justify-center shadow-lg shadow-[var(--primary-glow)] mb-4 border border-red-500/20">
+                    <i class="ri-file-3-fill text-3xl text-white"></i>
+                </div>
+                <h3 id="fname-text" class="text-lg font-bold truncate max-w-[80%] text-center"></h3>
+                <a id="download-btn" target="_blank"
+                    class="mt-4 bg-[var(--primary-color)] px-6 py-2 rounded-lg font-bold text-sm shadow-[0_0_15px_var(--primary-glow)] hover:brightness-110 transition">Download
+                    File</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+    <script>
+        const BASE_URL = window.location.origin;
+        const FILE_ID = window.location.pathname.split("/").pop();
+
+        async function init() {
+            try {
+                const res = await fetch(`${BASE_URL}/api/file/${FILE_ID}`);
+                if (!res.ok) throw new Error("API Error");
+                const data = await res.json();
+
+                const playerContainer = document.getElementById('player-container');
+                const viewerContainer = document.getElementById('viewer-container');
+
+                document.getElementById('fname-text').innerText = data.file_name;
+                document.getElementById('download-btn').href = data.direct_dl_link;
+
+                // 1. Audio
+                if (data.is_media && data.file_name.match(/\.(mp3|aac|wav|flac|m4a|ogg)$/i)) {
+                    playerContainer.classList.remove('hidden');
+                    // Audio specific styles for embed
+                    playerContainer.innerHTML = `
+                         <div class="flex flex-col h-full w-full bg-[var(--surface-color)] items-center justify-center p-4">
+                            <div class="w-20 h-20 rounded-full bg-gradient-to-br from-red-600 to-black flex items-center justify-center shadow-lg shadow-[var(--primary-glow)] mb-6 animate-[pulse_4s_infinite]">
+                                <i class="ri-music-2-fill text-4xl text-white"></i>
+                            </div>
+                            <h3 class="text-md font-bold truncate max-w-full mb-6">${data.file_name}</h3>
+                            <div class="w-full max-w-md">
+                                <audio id="audio-player" class="w-full" controls crossorigin playsinline>
+                                    <source src="${data.direct_dl_link}" type="audio/mp4"> 
+                                </audio>
+                            </div>
+                         </div>
+                    `;
+
+                    new Plyr('#audio-player', {
+                        controls: ['play', 'progress', 'current-time', 'mute', 'volume'],
+                        autoplay: true
+                    });
+                }
+                // 2. Video
+                else if (data.is_media) {
+                    playerContainer.classList.remove('hidden');
+
+                    const videoEl = document.createElement('video');
+                    videoEl.src = data.direct_dl_link;
+                    videoEl.controls = true;
+                    videoEl.playsInline = true;
+                    videoEl.crossOrigin = "anonymous";
+                    videoEl.style.width = '100%';
+                    videoEl.style.height = '100%';
+
+                    const loaderDiv = document.createElement('div');
+                    loaderDiv.id = 'media-loader';
+                    loaderDiv.className = 'absolute inset-0 z-50 flex items-center justify-center bg-black/90 transition-opacity duration-300 pointer-events-none';
+                    loaderDiv.innerHTML = `
+                        <div class="flex flex-col items-center gap-3">
+                            <div class="loader-dots scale-125"><span></span><span></span><span></span></div>
+                        </div>
+                    `;
+
+                    playerContainer.appendChild(loaderDiv);
+                    playerContainer.appendChild(videoEl);
+
+                    const player = new Plyr(videoEl, {
+                        controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'fullscreen'],
+                        autoplay: true,
+                        hideControls: false,
+                        keyboard: { focused: true, global: true },
+                        resetOnEnd: true
+                    });
+
+                    loaderDiv.style.opacity = '1';
+
+                    function hideLoader() {
+                        loaderDiv.style.opacity = '0';
+                        setTimeout(() => loaderDiv.style.display = 'none', 500);
+                    }
+                    function showLoader() {
+                        loaderDiv.style.display = 'flex';
+                        void loaderDiv.offsetWidth;
+                        loaderDiv.style.opacity = '1';
+                    }
+
+                    player.on('canplay', hideLoader);
+                    player.on('playing', hideLoader);
+                    player.on('seeking', showLoader);
+                    player.on('seeked', hideLoader);
+                    player.on('waiting', showLoader);
+                    videoEl.addEventListener('playing', hideLoader);
+
+                }
+                // 3. PDF
+                else if (data.file_name.match(/\.pdf$/i)) {
+                    viewerContainer.classList.remove('hidden');
+                    const iframe = document.getElementById('pdf-frame');
+                    iframe.src = data.direct_dl_link;
+                    iframe.classList.remove('hidden');
+                }
+                // 4. Image
+                else if (data.file_name.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                    viewerContainer.classList.remove('hidden');
+                    const img = document.getElementById('image-view');
+                    img.src = data.direct_dl_link;
+                    document.getElementById('image-view-container').classList.remove('hidden');
+                }
+                // 5. Other
+                else {
+                    viewerContainer.classList.remove('hidden');
+                    document.getElementById('file-view-container').classList.remove('hidden');
+                }
+
+                // Show Content
+                document.getElementById('loader-state').classList.add('hidden');
+                document.getElementById('success-state').classList.remove('hidden');
+
+            } catch (e) {
+                console.error(e);
+                document.getElementById('loader-state').classList.add('hidden');
+                document.getElementById('error-state').classList.remove('hidden');
+            }
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

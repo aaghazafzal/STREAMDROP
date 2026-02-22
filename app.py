@@ -736,7 +736,14 @@ async def handle_file_upload(message: Message, user_id: int):
         # URL-encode the filename to handle special characters
         encoded_file_name = quote(file_name, safe='')
         
-        page_link = f"{base_url}/show/{unique_id}"
+        embed_link_text = ""
+        admin_query = ""
+        if user_id == Config.OWNER_ID:
+            admin_query = "?admin=true"
+            embed_link = f"{base_url}/embed/{unique_id}"
+            embed_link_text = f"⚙️ **Embed Code (Admin):**\n`<iframe src=\"{embed_link}\" width=\"100%\" height=\"100%\" frameborder=\"0\" allowfullscreen></iframe>`\n\n"
+        
+        page_link = f"{base_url}/show/{unique_id}{admin_query}"
         dl_link = f"{base_url}/dl/{unique_id}/{encoded_file_name}"
         
         # Detect Type & Build UI
@@ -786,6 +793,7 @@ async def handle_file_upload(message: Message, user_id: int):
             f"**💾 Size:** `{file_size}`\n"
             f"{expire_note}\n\n"
             f"{status_text}\n\n"
+            f"{embed_link_text}"
             f"__Tap the button below for {action_verb.lower()}.__\n"
             f"__Powered by Univora | Dev: Rolex Sir__",
             reply_markup=InlineKeyboardMarkup(buttons),
@@ -972,6 +980,13 @@ async def show_page(request: Request, unique_id: str):
         {"request": request}
     )
 
+@app.get("/embed/{unique_id}", response_class=HTMLResponse)
+async def embed_page(request: Request, unique_id: str):
+    return templates.TemplateResponse(
+        "embed.html",
+        {"request": request}
+    )
+
 @app.get("/dashboard/{user_id}", response_class=HTMLResponse)
 async def dashboard_page(request: Request, user_id: int, token: str):
     # 1. Validate Token (HMAC)
@@ -1064,6 +1079,7 @@ async def get_file_details_api(request: Request, unique_id: str):
         "file_size": file_size,
         "is_media": mime_type.startswith(("video", "audio")),
         "direct_dl_link": direct_dl_link,
+        "embed_link": f"{Config.BASE_URL}/embed/{unique_id}",
         "mx_player_link": mx_mobile,
         "vlc_player_link_mobile": vlc_mobile,
         "vlc_player_link_pc": f"vlc://{direct_dl_link}",

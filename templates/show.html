@@ -617,6 +617,23 @@
                 document.getElementById('loader-state').classList.add('hidden');
                 document.getElementById('success-state').classList.remove('hidden');
 
+                // Admin Embed Section
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.get('admin') === 'true' && data.embed_link) {
+                    const embedContainer = document.createElement("div");
+                    embedContainer.className = "mt-8 p-4 rounded-xl bg-[var(--surface-color)] border border-red-500/30";
+                    embedContainer.innerHTML = `
+                        <h3 class="text-xs font-bold text-red-500 uppercase tracking-widest mb-3"><i class="ri-code-s-slash-line text-lg align-middle mr-1"></i> Developer Embed Code</h3>
+                        <div class="relative group">
+                            <textarea readonly class="w-full h-20 bg-black border border-[var(--border-color)] rounded-lg p-3 text-xs text-white font-mono resize-none focus:outline-none focus:border-red-500 transition-colors">&lt;iframe src="${data.embed_link}" width="100%" height="100%" frameborder="0" allowfullscreen&gt;&lt;/iframe&gt;</textarea>
+                            <button onclick="navigator.clipboard.writeText('<iframe src=\\'${data.embed_link}\\' width=\\'100%\\' height=\\'100%\\' frameborder=\\'0\\' allowfullscreen></iframe>'); this.innerHTML = '<i class=\\'ri-check-line\\'></i> Copied!';" class="absolute top-2 right-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-md opacity-0 group-hover:opacity-100 transition-all shadow-lg">
+                                <i class="ri-clipboard-line"></i> Copy
+                            </button>
+                        </div>
+                    `;
+                    document.getElementById('success-state').appendChild(embedContainer);
+                }
+
             } catch (e) {
                 console.error(e);
                 document.getElementById('loader-state').classList.add('hidden');
